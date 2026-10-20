@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.2.0
+
+### Added
+
+- **External job adoption** — peer extensions can hand a self-spawned child process to
+  bg-jobs over the `pi.events` bus (`"bg-jobs:adopt"`). Adopted jobs get the full
+  lifecycle: sidebar pills, `bg_jobs list/output/kill`, the `bg-jobs:status` snapshot
+  (so `pi-ralph-loop` waits on them), stall/oversize machinery, and exit bookkeeping.
+  Used by `pi-subagent` background mode. Payload: `{ command, name, pid, logPath, exit,
+  proc?, silent, disablePromptStall, onExit, reply }` — `reply({ok, id})` is called
+  synchronously; callers degrade gracefully when no bg-jobs instance is listening.
+
 ## 0.1.0
 
 ### Added

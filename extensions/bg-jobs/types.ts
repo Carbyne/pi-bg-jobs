@@ -50,6 +50,7 @@ export const EVENT = {
     timeout: "bg-timeout",
     jobFinished: "bg-job-finished",
     status: "bg-jobs:status",
+    adopt: "bg-jobs:adopt",
 } as const;
 
 /** Live job-status snapshot published on the shared pi.events bus. */
@@ -65,6 +66,42 @@ export interface BgJobsStatus {
     /** Start time of the oldest running job (for age checks). */
     oldestStartTime?: number;
     jobs: RunningJobInfo[];
+}
+
+/**
+ * Request to adopt an externally-spawned process as a managed background job.
+ * Emitted on the pi.events bus as "bg-jobs:adopt" by peer extensions (e.g.
+ * pi-subagent background mode) that spawn their own child processes but want
+ * bg-jobs' lifecycle machinery: sidebar pills, the "bg-jobs:status" bus
+ * (ralph-loop job-awareness), stall watch, kill via bg_jobs, and completion
+ * bookkeeping.
+ *
+ * The adopter owns spawning (stdout must already be redirected to `logPath`)
+ * and resolves `exit` when the child terminates. `reply` is called
+ * synchronously with the outcome; when no bg-jobs instance is listening the
+ * request is a no-op and the adopter should fall back to its own tracking.
+ */
+export interface AdoptJobRequest {
+    /** Display command string (sidebar, status, notifications). */
+    command: string;
+    /** Human label for the job (e.g. subagent name). */
+    name?: string;
+    /** Child pid (kill via process group). */
+    pid: number;
+    /** Log file the child's output is written to (already created/open). */
+    logPath: string;
+    /** Resolves with the child's exit code when it terminates. */
+    exit: Promise<number | null>;
+    /** Child handle (optional; enables proc-first termination). */
+    proc?: ChildProcess;
+    /** Skip bg-jobs' own completion notice (adopter notifies itself). Default false. */
+    silent?: boolean;
+    /** Skip the interactive-prompt stall heuristic (e.g. JSONL-stream children). */
+    disablePromptStall?: boolean;
+    /** Called with the exit code just before terminal bookkeeping. */
+    onExit?: (code: number | null) => void;
+    /** Synchronous reply channel with the adoption outcome. */
+    reply?: (result: { ok: boolean; id?: string; error?: string }) => void;
 }
 
 export type EventName = (typeof EVENT)[keyof typeof EVENT];

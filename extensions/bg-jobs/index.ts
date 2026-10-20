@@ -19,14 +19,17 @@ import {
     detectNonInteractive,
     monitorRevivedJobs,
     reviveAndValidate,
+    startBackgroundJob,
     terminateJobSilently,
 } from "./lifecycle.ts";
-import { forget as forgetJob, renderSidebar, stopSidebarTicker, computeStatus } from "./registry.ts";
+import { forget as forgetJob, renderSidebar, stopSidebarTicker, computeStatus, add, createRunningJob, nextJobId, atConcurrencyLimit } from "./registry.ts";
 import { cancelFinishedFlush, enqueueFinished } from "./notify.ts";
 import {
     EVENT,
     PERSISTED_STATE_SCHEMA_VERSION,
+    type AdoptJobRequest,
     type Job,
+    type UiContext,
 } from "./types.ts";
 import { registerBgRunTool } from "./tools/bg-run.ts";
 import { registerBgJobsTool } from "./tools/jobs.ts";
@@ -75,6 +78,54 @@ export default function (pi: ExtensionAPI): void {
         reg.emitStatus?.(computeStatus(reg));
     });
 
+    // ── External-job adoption (pi-subagent background mode, etc.) ────
+    // A peer extension that spawns its own long-lived child can hand it to
+    // bg-jobs for lifecycle management: it appears in bg_jobs list/kill, the
+    // sidebar, and the "bg-jobs:status" snapshot (so ralph-loop waits on it).
+    // The adopter owns spawning and the log file; we only track + signal.
+    let lastUiCtx: UiContext | undefined;
+    pi.events.on(EVENT.adopt, (raw: unknown) => {
+        const req = raw as AdoptJobRequest | undefined;
+        if (!req || typeof req.command !== "string" || !req.logPath || !req.exit) {
+            req?.reply?.({ ok: false, error: "invalid adopt request" });
+            return;
+        }
+        if (!lastUiCtx) {
+            req?.reply?.({ ok: false, error: "bg-jobs session not started" });
+            return;
+        }
+        if (atConcurrencyLimit(reg)) {
+            req?.reply?.({ ok: false, error: "concurrency limit reached" });
+            return;
+        }
+        try {
+            const id = nextJobId(reg);
+            const job = createRunningJob({
+                id,
+                command: req.command,
+                pid: req.pid,
+                logPath: req.logPath,
+                toolCallId: "external",
+                name: req.name,
+            });
+            if (req.proc) job.proc = req.proc;
+            add(reg, job);
+            startBackgroundJob({
+                reg,
+                pi,
+                ctx: lastUiCtx,
+                job,
+                exit: req.exit,
+                shouldNotify: req.silent !== true,
+                disablePromptStall: req.disablePromptStall,
+                onExit: req.onExit,
+            });
+            req.reply?.({ ok: true, id });
+        } catch (err) {
+            req.reply?.({ ok: false, error: err instanceof Error ? err.message : String(err) });
+        }
+    });
+
     // ── Tool registration (deferred to session_start for settings) ──
     registerBgJobsTool(pi, reg);
 
@@ -85,6 +136,7 @@ export default function (pi: ExtensionAPI): void {
 
     // ── Session start ─────────────────────────────────────────────
     pi.on("session_start", async (_event, ctx) => {
+        lastUiCtx = ctx as unknown as UiContext;
         reg.nonInteractive = detectNonInteractive(
             process.argv,
             Boolean(process.stdin.isTTY)
