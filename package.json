@@ -1,6 +1,6 @@
 {
   "name": "pi-bg-jobs",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Background job runner for pi: launch long commands without blocking, get notified on completion, and manage them from an interactive panel.",
   "license": "MIT",
   "type": "module",
