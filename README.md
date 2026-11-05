@@ -145,11 +145,18 @@ output somewhere hostile. Set `bgJobs.logDir` to override the location.
 Logs can contain secrets (tokens in command lines, credentials in build output). They are
 `0600` inside a `0700` directory, and are only swept after 24 days.
 
-## Pairing with pi-ralph-loop
+## Event bus contracts
 
-`pi-ralph-loop` listens for `bg-jobs:status` events on the pi event bus so its loop pauses
-while your jobs run. This extension emits them; it works standalone either way, and the
-coupling is soft — no listener, no effect.
+bg-jobs is the job registry the rest of the fleet coordinates through — all coupling is
+soft over `pi.events` (no peer loaded → these are inert no-ops):
+
+| Event | Direction | Consumers | Purpose |
+|-------|-----------|-----------|---------|
+| `bg-jobs:status` | **emitted** (on every running-set change, plus on request) | [pi-ralph-loop](https://github.com/Carbyne/pi-ralph-loop) pauses follow-ups while jobs run and fires stuck-checks; [pi-agent-steer](https://github.com/Carbyne/pi-agent-steer) gates `a` / `/idlequeue` / the idle-with-bg prompt | `{running, oldestStartTime?, jobs[{id, name?, command, startTime}]}` |
+| `bg-jobs:status-request` | **answers** (re-emits current snapshot) | same | Peers subscribing *after* a reload/revive missed change events; mirrors the ralph pattern |
+| `bg-jobs:adopt` | **accepts** | [pi-subagent](https://github.com/Carbyne/pi-subagent) background runs | Registers an externally-spawned child as a managed job: sidebar pills, `bg_jobs list/output/kill`, status broadcasts, stall/oversize watch, exit bookkeeping. Payload: `{command, name, pid, logPath, exit, proc?, silent?, disablePromptStall?, onExit?, reply?}` — `reply({ok, id})` is synchronous so the adopter can detect “bg-jobs not loaded” and fall back internally |
+| `sudo-grant:state` | **consumed** | — (emitted by [pi-sudo-grant](https://github.com/Carbyne/pi-sudo-grant)) | While a sudo grant is active, `bg_run` spawns keep pi's controlling tty (setpgid-without-setsid wrapper) + the fail-fast `sudo -n` PATH shim, so `sudo` works inside background jobs. Revoked/no-grant/no-python3 → spawns are exactly as before. Subagent children are never covered (sudo is main-agent-only by contract) |
+| `sudo-grant:state-request` | **emitted** (on session start) | — | Snapshot sync after reload, same pattern as above |
 
 ## Development
 
