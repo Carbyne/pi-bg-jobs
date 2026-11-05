@@ -78,6 +78,17 @@ export default function (pi: ExtensionAPI): void {
         reg.emitStatus?.(computeStatus(reg));
     });
 
+    // Mirror the sudo-grant extension's state (see spawn.ts ttyPreserve).
+    try {
+        pi.events.on("sudo-grant:state", (s: unknown) => {
+            const st = s as { active?: boolean; shimDir?: string } | undefined;
+            reg.sudoGrantActive = st?.active === true;
+            reg.sudoShimDir = typeof st?.shimDir === "string" ? st.shimDir : undefined;
+        });
+    } catch {
+        /* bus unavailable */
+    }
+
     // ── External-job adoption (pi-subagent background mode, etc.) ────
     // A peer extension that spawns its own long-lived child can hand it to
     // bg-jobs for lifecycle management: it appears in bg_jobs list/kill, the
@@ -141,6 +152,14 @@ export default function (pi: ExtensionAPI): void {
             process.argv,
             Boolean(process.stdin.isTTY)
         );
+
+        // Subscribe to live sudo-grant state, then request the current
+        // snapshot (events emitted before this subscription would be missed).
+        try {
+            pi.events.emit("sudo-grant:state-request", undefined);
+        } catch {
+            /* bus unavailable */
+        }
 
         // Load user settings (ctx.settings not exposed to extensions — read files directly)
         const s = loadBgJobsSettings(ctx.cwd);

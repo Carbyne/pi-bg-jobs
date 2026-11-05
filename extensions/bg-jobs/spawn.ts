@@ -1,8 +1,33 @@
 // src/spawn.ts
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { closeSync, openSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { ensureLogDir } from "./registry.ts";
+
+// Mirror of pi-sudo-grant's setpgid-without-setsid wrapper: the child joins
+// its own process group (so killProcessTree(-pid) keeps working) WITHOUT
+// calling setsid(), thereby retaining the controlling tty — which is what
+// makes sudo's tty-keyed credential cache reachable from bg jobs while a
+// grant is active. Node's `detached` bundles setpgid+setsid, hence python.
+const PYTHON_WRAPPER_SCRIPT = [
+    "import os, sys",
+    "os.setpgid(0, 0)",
+    "os.execvp(sys.argv[1], sys.argv[1:])",
+].join("\n")
+
+let pythonProbe: string | null | undefined
+function findPython(): string | null {
+    if (pythonProbe !== undefined) return pythonProbe
+    for (const candidate of ["python3", "python"]) {
+        try {
+            const p = spawnSync(candidate, ["-c", "pass"], { stdio: "ignore", timeout: 5000 })
+            if (!p.error && p.status === 0) return (pythonProbe = candidate)
+        } catch {
+            /* next */
+        }
+    }
+    return (pythonProbe = null)
+}
 
 export interface SpawnResult {
     pid: number;
@@ -42,6 +67,13 @@ export function spawnWithFileOutput(args: {
      *  the monitor tool so stdout is a clean event stream and stderr is captured
      *  separately (readable, but never emitted as an event). */
     errPath?: string;
+    /** When set (active sudo grant), spawn through the setpgid-without-setsid
+     *  python wrapper so the child keeps pi's controlling tty and can use
+     *  sudo's tty-keyed credential cache. POSIX only; falls back silently. */
+    ttyPreserve?: boolean;
+    /** Directory holding the `sudo -n` shim to prepend to PATH (fail-fast
+     *  instead of tty-prompting) while ttyPreserve is active. */
+    sudoShimDir?: string;
     signal?: AbortSignal;
 }): SpawnResult {
     // Creates the dir 0700 (or validates an existing one) before we open any
@@ -57,17 +89,36 @@ export function spawnWithFileOutput(args: {
         throw err;
     }
 
-    const [bin, binArgs]: [string, string[]] = args.file
+    const [baseBin, baseArgs]: [string, string[]] = args.file
         ? [args.file, args.fileArgs ?? []]
         : ["bash", ["-c", wrapWithResultCapture(args.command ?? "", args.resultPath)]];
+
+    // ttyPreserve: run the real command through the python setpgid wrapper.
+    let bin = baseBin
+    let binArgs = baseArgs
+    let detached = true
+    const env: NodeJS.ProcessEnv = { ...process.env }
+    if (args.ttyPreserve && process.platform !== "win32") {
+        const py = findPython()
+        if (py) {
+            bin = py
+            binArgs = ["-c", PYTHON_WRAPPER_SCRIPT, baseBin, ...baseArgs]
+            detached = false // wrapper does setpgid itself; detached would setsid
+        }
+        // py === null → stay on the plain detached path (no tty, sudo fails
+        // fast as before). Never block the job on a missing python3.
+        if (args.sudoShimDir) {
+            env.PATH = `${args.sudoShimDir}:${env.PATH ?? "/usr/bin:/bin"}`
+        }
+    }
 
     let proc;
     try {
         proc = spawn(bin, binArgs, {
             stdio: ["ignore", outFd, errFd],
             cwd: args.cwd,
-            detached: true,
-            env: { ...process.env },
+            detached,
+            env,
         });
     } finally {
         closeSync(outFd);

@@ -4,6 +4,22 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.3.0
+
+### Added
+
+- **Sudo-capable background jobs while a grant is active.** pi-bg-jobs mirrors
+  pi-sudo-grant over the event bus (`sudo-grant:state` / `state-request`): when
+  the user holds an active sudo grant, `bg_run` spawns go through the
+  setpgid-without-setsid python wrapper (the same trick pi-sudo-grant uses for
+  the bash tool) so the job keeps pi's controlling tty — sudo's credential
+  cache is tty-keyed. The granted PATH's `sudo -n` fail-fast shim is prepended,
+  so a stale/missing cache produces an immediate `sudo: a password is required`
+  in the job log instead of a terminal prompt. Without an active grant (or
+  without python3), jobs spawn exactly as before (detached, no tty). This is
+  deliberately NOT propagated to subagent children — sudo remains
+  main-agent-only (see pi-subagent 0.4.7 / pi-sudo-grant 0.1.1).
+
 ## 0.2.0
 
 ### Added

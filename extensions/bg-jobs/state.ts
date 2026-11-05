@@ -11,6 +11,14 @@ export class BackgroundRegistry {
     emitStatus?: (s: BgJobsStatus) => void;
     lastStatusKey: string | undefined;
 
+    // ── sudo-grant mirror (pi-sudo-grant broadcasts "sudo-grant:state") ──
+    // When the user holds an active sudo grant, background jobs spawn with
+    // the same controlling-tty preservation the bash tool uses, so `sudo`
+    // inside a bg command hits the tty-keyed credential cache. Subagent
+    // children are unaffected (sudo is contractually main-agent-only).
+    sudoGrantActive: boolean = false;
+    sudoShimDir?: string;
+
     jobAborts = new Map<string, AbortController>();
 
     nonInteractive = false;

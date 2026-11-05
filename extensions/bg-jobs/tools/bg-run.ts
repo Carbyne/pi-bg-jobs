@@ -110,6 +110,11 @@ export function registerBgRunTool(pi: ExtensionAPI, reg: BackgroundRegistry, dis
                 command: p.command,
                 cwd: bashCtx.cwd,
                 logPath,
+                // Active sudo grant → keep the controlling tty so `sudo` in
+                // the command hits the tty-keyed credential cache (mirrors
+                // the bash tool while granted); fail-fast shim via PATH.
+                ttyPreserve: reg.sudoGrantActive,
+                sudoShimDir: reg.sudoShimDir,
             });
 
             const job = createRunningJob({
