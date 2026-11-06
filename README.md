@@ -99,6 +99,9 @@ Set a `bgJobs` object in `~/.pi/agent/settings.json` (or a project's `.pi/settin
     "foregroundGuard": true,
     "maxForegroundSec": 300,
     "foregroundAllow": [],
+    "blockSleepWhileBusy": true,
+    "sleepMatch": "prefix",
+    "sleepRejection": "no foreground sleeping while jobs run — you'll be notified",
     "logDir": null,
     "stallThresholdMs": 45000,
     "maxLogBytes": 104857600
@@ -121,6 +124,9 @@ Set a `bgJobs` object in `~/.pi/agent/settings.json` (or a project's `.pi/settin
 | `foregroundGuard` | `true` | Require `bash` calls to carry a bounded timeout |
 | `maxForegroundSec` | `300` | Maximum allowed foreground timeout |
 | `foregroundAllow` | `[]` | Regex sources matched against the command; a match bypasses the guard |
+| `blockSleepWhileBusy` | `true` | While any bg job is running, block foreground `bash`/`powershell` commands that poll with `sleep` — completion is pushed to you automatically, so polling only freezes the session. **Independent of `foregroundGuard`**: stays active even if you keep the timeout policy off |
+| `sleepMatch` | `"prefix"` | `"prefix"`: command begins with `sleep` (also catches `sudo/time/nohup sleep`, absolute paths). `"anywhere"`: any `sleep` token in the command (catches `make && sleep 1`; can also hit e.g. `grep sleep log` — exempt via `foregroundAllow`) |
+| `sleepRejection` | built-in | Block-reason text; placeholders `{tool}` `{max}` `{asked}` |
 | `logDir` | *auto* | Override where job logs live (see below) |
 | `stallThresholdMs` | `45000` | Silence before a job is flagged as possibly stalled |
 | `maxLogBytes` | `104857600` | Rotate a job log past this size |

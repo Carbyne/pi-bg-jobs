@@ -189,6 +189,9 @@ export default function (pi: ExtensionAPI): void {
         }
         if (typeof s?.fgGuardNoTimeout === "string") reg.fgGuardNoTimeout = s.fgGuardNoTimeout as string;
         if (typeof s?.fgGuardTooLong === "string") reg.fgGuardTooLong = s.fgGuardTooLong as string;
+        if (typeof s?.blockSleepWhileBusy === "boolean") reg.fgGuardBlockSleepWhileBusy = s.blockSleepWhileBusy as boolean;
+        if (s?.sleepMatch === "prefix" || s?.sleepMatch === "anywhere") reg.fgGuardSleepMatch = s.sleepMatch;
+        if (typeof s?.sleepRejection === "string") reg.fgGuardSleepRejection = s.sleepRejection as string;
         if (typeof s?.disableTimeoutArg === "boolean") reg.disableTimeoutArg = s.disableTimeoutArg as boolean;
         if (reg.disableTimeoutArg) reg.timeout = null; // no timeout when arg is disabled
 

@@ -42,7 +42,8 @@ export function registerCommands(
             }
             ctx.ui.notify(
                 `fg-guard: ${reg.foregroundGuard ? "ENABLED" : "disabled"} — max foreground ${fmtDurSec(reg.maxForegroundSec)}, ` +
-                    `blocked this session: ${reg.guardBlocked}, allowlist: ${reg.foregroundAllow.length ? reg.foregroundAllow.join(" | ") : "(none)"}`,
+                    `blocked this session: ${reg.guardBlocked}, allowlist: ${reg.foregroundAllow.length ? reg.foregroundAllow.join(" | ") : "(none)"}, ` +
+                    `sleep-while-busy: ${reg.fgGuardBlockSleepWhileBusy ? reg.fgGuardSleepMatch : "off"}`,
                 "info"
             );
         },

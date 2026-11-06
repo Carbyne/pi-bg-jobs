@@ -1,6 +1,6 @@
 import type { BgJobsStatus, Job } from "./types.ts";
 import { DEFAULT_LOG_DIR } from "./registry.ts";
-import { FG_GUARD_NO_TIMEOUT_DEFAULT, FG_GUARD_TOO_LONG_DEFAULT } from "./guard.ts";
+import { FG_GUARD_NO_TIMEOUT_DEFAULT, FG_GUARD_TOO_LONG_DEFAULT, FG_GUARD_SLEEP_DEFAULT } from "./guard.ts";
 
 export class BackgroundRegistry {
     jobs = new Map<string, Job>();
@@ -70,6 +70,16 @@ export class BackgroundRegistry {
     /** Block-reason templates. Placeholders: {tool} {max} {asked}. */
     fgGuardNoTimeout: string = FG_GUARD_NO_TIMEOUT_DEFAULT;
     fgGuardTooLong: string = FG_GUARD_TOO_LONG_DEFAULT;
+    /** While any bg job is running, block foreground bash/powershell commands
+     *  that poll with sleep (the anti-pattern: job completion is pushed via
+     *  notification, sleeping in the foreground only freezes the session). */
+    fgGuardBlockSleepWhileBusy: boolean = true;
+    /** "prefix": command begins with the sleep binary; "anywhere": a `sleep`
+     *  token appears anywhere in the command (can match e.g. `grep sleep …` —
+     *  exempt via foregroundAllow). */
+    fgGuardSleepMatch: "prefix" | "anywhere" = "prefix";
+    /** Block-reason template for the sleep guard. Placeholders: {tool} {max} {asked}. */
+    fgGuardSleepRejection: string = FG_GUARD_SLEEP_DEFAULT;
     guardBlocked: number = 0;
 
     completedCount = 0;

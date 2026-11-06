@@ -65,6 +65,8 @@ export const FG_GUARD_NO_TIMEOUT_DEFAULT =
     "bg-jobs foreground guard: {tool} requires an explicit 'timeout' in seconds (max {max}). Quick command → small timeout. Longer than {max} → run it with bg_run instead: it returns immediately, you keep working, and you're notified automatically when it finishes.";
 export const FG_GUARD_TOO_LONG_DEFAULT =
     "bg-jobs foreground guard: foreground {tool} is capped at {max} (you asked for {asked}). Blocking waits freeze the session (no settle → no bg-jobs notices, no steering). Use bg_run for this command instead.";
+export const FG_GUARD_SLEEP_DEFAULT =
+    "bg-jobs foreground guard: foreground `sleep` is illegal while background jobs are running. Job completion is NOTED to you automatically (exit code, duration, log path) \u2014 polling with sleep freezes the session (no settle \u2192 no notices, no steering) and buys nothing. Non-blocking peek: bg_jobs action='output'. Need a real delayed action? Schedule it: bg_run 'sleep N && <the thing you were about to do>'. Waiting on a specific job? bg_jobs action='attach' snapshots its live output.";
 
 /** Fill {tool} {max} {asked} placeholders in a block-reason template. */
 function renderReason(tpl: string | undefined, fallback: string, tool: string, maxSec: number, askedSec?: number): string {
@@ -75,9 +77,19 @@ function renderReason(tpl: string | undefined, fallback: string, tool: string, m
         .split("{asked}").join(askedSec !== undefined ? fmtDurSec(askedSec) : "");
 }
 
+/** prefix: command starts with the sleep binary (absolute path allowed).
+ *  anywhere: a `sleep` word token appears anywhere (paths ending in /sleep too). */
+const SLEEP_PREFIX_RE = /^\s*(?:time\s+|sudo\s+|nohup\s+|env\s+)*(?:[\w./+-]*\/)?sleep(?:\s|$)/i;
+const SLEEP_ANYWHERE_RE = /(?:^|[\s;|&(`'"$])(?:[\w./+-]*\/)?sleep(?:\s|$|[;|&)'"])/i;
+
+function hasRunningJobs(reg: BackgroundRegistry): boolean {
+    for (const job of reg.jobs.values()) if (job.status === "running") return true;
+    return false;
+}
+
 export function registerForegroundGuard(pi: ExtensionAPI, reg: BackgroundRegistry): void {
     pi.on("tool_call", async (event) => {
-        if (!reg.foregroundGuard || !FOREGROUND_TOOLS.has(event.toolName)) return undefined;
+        if (!FOREGROUND_TOOLS.has(event.toolName)) return undefined;
 
         let command: string | undefined;
         let timeout: number | undefined;
@@ -90,6 +102,22 @@ export function registerForegroundGuard(pi: ExtensionAPI, reg: BackgroundRegistr
 
         const cmd = command ?? "";
         if (reg.foregroundAllowRe.some((re) => re.test(cmd))) return undefined;
+
+        // Sleep-while-busy: independent of the timeout guard (foregroundGuard)
+        // — it enforces the completion-notification contract, not the
+        // blocking-wait policy, and stays active even when that policy is off.
+        if (reg.fgGuardBlockSleepWhileBusy && hasRunningJobs(reg)) {
+            const re = reg.fgGuardSleepMatch === "anywhere" ? SLEEP_ANYWHERE_RE : SLEEP_PREFIX_RE;
+            if (re.test(cmd)) {
+                reg.guardBlocked++;
+                return {
+                    block: true,
+                    reason: renderReason(reg.fgGuardSleepRejection, FG_GUARD_SLEEP_DEFAULT, event.toolName, reg.maxForegroundSec),
+                };
+            }
+        }
+
+        if (!reg.foregroundGuard) return undefined;
 
         if (timeout === undefined || timeout === null || timeout <= 0) {
             reg.guardBlocked++;

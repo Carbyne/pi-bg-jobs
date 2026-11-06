@@ -4,6 +4,26 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.4.0
+
+### Added
+
+- **Sleep guard**: while any background job is running, foreground
+  `bash`/`powershell` commands that poll with `sleep` are blocked by default
+  (`blockSleepWhileBusy: true`). This enforces the extension's core contract —
+  job completion is *pushed* to the agent automatically, so a foreground sleep
+  freezes the session (no settle → no notices, no steering) and buys nothing.
+  The block reason teaches the alternatives (`bg_jobs action='output'` peek,
+  `action='attach'` live snapshot, `bg_run 'sleep N && …'` for genuinely
+  delayed actions).
+  - `sleepMatch: "prefix"` (default) catches commands beginning with `sleep`,
+    incl. `sudo/time/nohup sleep` and absolute paths; `"anywhere"` catches a
+    `sleep` token anywhere in the command.
+  - `sleepRejection` customizes the block text (`{tool}` `{max}` `{asked}`
+    placeholders).
+  - Independent of `foregroundGuard`: stays active even where the timeout
+    policy is off. `foregroundAllow` regexes exempt commands from both.
+
 ## 0.3.0
 
 ### Added
